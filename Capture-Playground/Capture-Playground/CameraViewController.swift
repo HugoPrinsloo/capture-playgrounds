@@ -21,6 +21,9 @@ class CameraController: UIViewController {
     private var captureSession = AVCaptureSession()
     private let discoverySession = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInTrueDepthCamera, .builtInDualCamera, .builtInWideAngleCamera], mediaType: .video, position: .unspecified)
     private var capturePhotoOutput = AVCapturePhotoOutput()
+    let videoOutput = AVCaptureVideoDataOutput()
+    let imageView = UIImageView()
+
     private var videoPreviewLayer: AVCaptureVideoPreviewLayer!
     private var currentDevice: AVCaptureDevice?
     // Use this preview to view camera view
@@ -43,6 +46,7 @@ class CameraController: UIViewController {
         previewView.addGestureRecognizer(gesture)
         
         view.addSubview(focusPointImageView)
+        
     }
     
     override func viewWillAppear(_ animated: Bool) {
@@ -173,8 +177,11 @@ extension CameraController {
                 captureSession.addOutput(capturePhotoOutput)
                 captureSession.commitConfiguration()
                 currentDevice = cameraToUse
+                videoOutput.setSampleBufferDelegate(self, queue: DispatchQueue.init(label: "sample buffer delegate"))
+                captureSession.addOutput(videoOutput)
+
                 setupLivePreview()
-                
+
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                     self.animateOnStart()
                 }
@@ -198,18 +205,16 @@ extension CameraController {
     }
     
     private func setupLivePreview() {
-        
-        videoPreviewLayer = AVCaptureVideoPreviewLayer(session: captureSession)
-        
-        videoPreviewLayer.videoGravity = .resizeAspect
-        videoPreviewLayer.connection?.videoOrientation = .portrait
-        previewView.layer.addSublayer(videoPreviewLayer)
+        view.addSubview(imageView)
+        imageView.backgroundColor = .red
+        imageView.translatesAutoresizingMaskIntoConstraints = false
+        imageView.fillSuperview()
+        imageView.contentMode = .scaleAspectFill
+        imageView.transform = CGAffineTransform(rotationAngle: CGFloat(Double.pi/2))
+
         
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else { return }
-            DispatchQueue.main.async {
-                self.videoPreviewLayer.frame = self.previewView.bounds
-            }
             self.captureSession.startRunning()
         }
     }
@@ -289,7 +294,22 @@ extension CameraController {
     }
 }
 
-extension CameraController {
-    func setWhiteBalance() {
+extension CameraController: AVCaptureVideoDataOutputSampleBufferDelegate {
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer)
+        let cameraImage = CIImage(cvPixelBuffer: pixelBuffer!)
+        
+        if let filter = CIFilter(name: "CISepiaTone") {
+            
+            filter.setValue(cameraImage, forKey: kCIInputImageKey)
+            filter.setValue(0.5, forKey: kCIInputIntensityKey)
+            
+            let newImage = UIImage(ciImage: filter.outputImage!)
+            DispatchQueue.main.async {
+                self.imageView.image = newImage
+            }
+            
+        }
     }
 }
